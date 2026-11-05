@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Model Proxy",
+    "description": "Send model calls through an HTTP or HTTPS forward proxy and switch proxies without leaving the conversation."
+  }
+}

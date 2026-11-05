@@ -1,0 +1,3 @@
+- insert:
+    - id: dsh-model-proxy
+      name: 'dsh-model-proxy'
