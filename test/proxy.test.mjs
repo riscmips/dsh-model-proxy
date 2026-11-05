@@ -7,6 +7,7 @@ import tls from 'node:tls'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { execFileSync } from 'node:child_process'
 
 import {
   DEFAULT_BYPASS,
@@ -19,8 +20,41 @@ import {
   routeFor,
 } from '../lib/proxy-fetch.js'
 
-const CERT = fs.readFileSync(new URL('./fixtures/localhost-cert.pem', import.meta.url))
-const KEY = fs.readFileSync(new URL('./fixtures/localhost-key.pem', import.meta.url))
+/**
+ * The TLS fixture is generated on demand instead of being committed: a private
+ * key does not belong in the repository, and a throwaway localhost certificate
+ * is all that is needed to prove the CONNECT tunnel performs a real handshake.
+ */
+function selfSignedCert() {
+  const dir = new URL('./.tmp-test/certs/', import.meta.url)
+  const cert = new URL('cert.pem', dir)
+  const key = new URL('key.pem', dir)
+  try {
+    if (!fs.existsSync(cert) || !fs.existsSync(key)) {
+      fs.mkdirSync(dir, { recursive: true })
+      execFileSync('openssl', [
+        'req', '-x509', '-newkey', 'rsa:2048', '-nodes',
+        '-keyout', key.pathname, '-out', cert.pathname,
+        '-days', '3650', '-subj', '/CN=localhost',
+        '-addext', 'subjectAltName=DNS:localhost,IP:127.0.0.1',
+      ], { stdio: 'ignore' })
+    }
+    return { cert: fs.readFileSync(cert), key: fs.readFileSync(key) }
+  } catch {
+    return null
+  }
+}
+
+const CERTS = selfSignedCert()
+const CERT = CERTS?.cert
+const KEY = CERTS?.key
+
+/** Skips a TLS test when no certificate could be generated on this machine. */
+function needsCerts(t) {
+  if (CERTS !== null) return false
+  t.skip('openssl is unavailable, so no TLS fixture could be generated')
+  return true
+}
 
 /** An upstream origin server that echoes what it received. */
 function origin({ tls: useTls = false } = {}) {
@@ -188,6 +222,7 @@ test('plain HTTP goes through the proxy in absolute-form, with auth', async (t) 
 })
 
 test('HTTPS goes through a CONNECT tunnel with a real TLS handshake', async (t) => {
+  if (needsCerts(t)) return
   const up = origin({ tls: true })
   const target = await listen(up.server)
   const proxy = forwardProxy()
@@ -204,6 +239,7 @@ test('HTTPS goes through a CONNECT tunnel with a real TLS handshake', async (t) 
 })
 
 test('a streamed response arrives incrementally through the tunnel', async (t) => {
+  if (needsCerts(t)) return
   const up = origin({ tls: true })
   const target = await listen(up.server)
   const proxy = forwardProxy()
@@ -226,6 +262,7 @@ test('a streamed response arrives incrementally through the tunnel', async (t) =
 })
 
 test('proxy authentication is enforced on both dialects', async (t) => {
+  if (needsCerts(t)) return
   const up = origin({ tls: true })
   const target = await listen(up.server)
   const proxy = forwardProxy({ requireAuth: { username: 'u', password: 'p' } })

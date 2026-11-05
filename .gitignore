@@ -152,3 +152,4 @@ vite.config.ts.timestamp-*
 .tmp-test/
 *.tmp
 .DS_Store
+*.pem
